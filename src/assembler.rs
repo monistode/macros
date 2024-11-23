@@ -445,11 +445,13 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
     };
 }
 
-pub fn generate_parser(definition: &Definition) -> proc_macro2::TokenStream {
+pub fn generate_parser(definition: &Definition, architecture: &str) -> proc_macro2::TokenStream {
     let text_parser = generate_text_parser(definition);
+    let arch = format!("{}", architecture);
+    let arch_ident = syn::Ident::new(&arch, proc_macro2::Span::call_site());
+
     return quote! {
         #text_parser
-
 
         fn all_sections_parser<Input>() -> impl combine::Parser<Input, Output = Vec<monistode_binutils::object_file::Section>>
         where
@@ -463,7 +465,7 @@ pub fn generate_parser(definition: &Definition) -> proc_macro2::TokenStream {
             )
         }
 
-        pub fn parse(input: &str) -> Result<Vec<monistode_binutils::object_file::Section>, String> {
+        pub fn parse(input: &str) -> Result<monistode_binutils::object_file::ObjectFile, String> {
             let mut input = input.to_string();
             if !input.ends_with("\n") {
                 input.push('\n');
@@ -473,7 +475,7 @@ pub fn generate_parser(definition: &Definition) -> proc_macro2::TokenStream {
                 .map_err(|e| e.map_position(|p| p.translate_position(input.as_str())));
 
             match result {
-                Ok((r, remaining)) => {
+                Ok((sections, remaining)) => {
                     if !remaining.0.is_empty() {
                         let position = input.len() - remaining.0.len();
                         let line = input[..position].chars().filter(|c| *c == '\n').count() + 1;
@@ -491,7 +493,10 @@ pub fn generate_parser(definition: &Definition) -> proc_macro2::TokenStream {
                             line, column + 1, line_with_error, " ".repeat(column)
                         ))
                     } else {
-                        Ok(r)
+                        Ok(monistode_binutils::object_file::ObjectFile::with_sections(
+                            monistode_binutils::object_file::Architecture::#arch_ident,
+                            sections
+                        ))
                     }
                 }
                 Err(e) => Err(format!("{}", e)),
