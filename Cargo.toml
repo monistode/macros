@@ -1,0 +1,13 @@
+[package]
+name = "monistode-macros"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proc-macro2 = "1.0.86"
+quote = "1.0.37"
+syn = "2.0.77"
+monistode-binutils = { path = "../monistode-binutils" }
+
+[lib]
+proc-macro = true
