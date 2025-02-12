@@ -60,6 +60,8 @@ checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 [[package]]
 name = "monistode-binutils"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48d9e033444c8fac396f0d5c2fb01a0ee4aecf5d6a9c8cad9fa927ab925d6f78"
 dependencies = [
  "bitvec",
  "convert_case",

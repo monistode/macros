@@ -1,6 +1,6 @@
 mod assembler;
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, LitStr, Ident};
+use syn::parse_macro_input;
 
 #[proc_macro]
 pub fn assembler(input: TokenStream) -> TokenStream {
@@ -8,7 +8,7 @@ pub fn assembler(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input with syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated)
         .into_iter()
         .collect::<Vec<_>>();
-    
+
     if input.len() != 2 {
         panic!("Expected two arguments: architecture name and definition file path");
     }
@@ -25,7 +25,11 @@ pub fn assembler(input: TokenStream) -> TokenStream {
     };
 
     // Extract filename from string literal
-    let filename = if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) = &input[1] {
+    let filename = if let syn::Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Str(s),
+        ..
+    }) = &input[1]
+    {
         s.value()
     } else {
         panic!("Expected string literal for filename");

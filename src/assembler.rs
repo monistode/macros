@@ -224,7 +224,8 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
 
     return quote! {
         use combine::{Parser, EasyParser};
-        pub use monistode_binutils::object_file::{Address, Symbol, Relocation};
+        pub use monistode_binutils::{Address, Symbol};
+        pub use monistode_binutils::object_file::Relocation;
 
         trait HelpfulSymbol {
             fn after(self, n_bits: usize) -> Self;
@@ -361,7 +362,7 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
             combine::parser::choice::choice((
                 combine::attempt(parse_numeric().map(move |immediate: usize| {
                     let mut data = bitvec::prelude::BitVec::new();
-                    data.extend((0..n_bits).map(|i| (immediate >> i) & 1 == 1));
+                    data.extend((0..n_bits).map(|i| (immediate >> i) & 1 == 1).rev());
                     Parsed::from_data(data)
                 })),
                 combine::attempt(parse_symbol_name().map(move |symbol: String| {
@@ -494,7 +495,7 @@ pub fn generate_parser(definition: &Definition, architecture: &str) -> proc_macr
                         ))
                     } else {
                         Ok(monistode_binutils::object_file::ObjectFile::with_sections(
-                            monistode_binutils::object_file::Architecture::#arch_ident,
+                            monistode_binutils::Architecture::#arch_ident,
                             sections
                         ))
                     }
