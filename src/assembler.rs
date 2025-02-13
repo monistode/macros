@@ -179,14 +179,29 @@ fn generate_command_parser(
 }
 
 fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
-    let mut command_parsers = definition.commands.iter().map(|c| {
-        generate_command_parser(
-            c,
-            definition.opcode_length,
-            definition.text_byte_length,
-            definition.address_size,
-        )
-    })
+    let mut command_parsers = definition
+        .commands
+        .iter()
+        .map(|c| {
+            generate_command_parser(
+                c,
+                definition.opcode_length,
+                definition.text_byte_length,
+                definition.address_size,
+            )
+        })
+        .map(|c| {
+            quote! { (
+                                #c,
+                                combine::skip_many(combine::parser::char::char(' ')),
+                                combine::parser::choice::choice((
+                                    parse_comment(),
+                                    combine::parser::char::char('\n').map(|_| ()),
+                                )),
+            ).map(|(parsed, _, _)| parsed)
+
+            }
+        })
         .collect::<Vec<_>>();
 
     while command_parsers.len() > 1 {
@@ -444,19 +459,11 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
             combine::parser::repeat::many((
                 combine::skip_many(combine::parser::char::char(' ')),
                 combine::parser::choice::choice((
-                    // Meaningful line (with either comment or newline)
-                    (
-                        // Make leading whitespace optional by using skip_many instead of skip_many1
-                        combine::parser::choice::choice((
-                            combine::attempt(parse_label()),
-                            combine::attempt(parse_command()),
-                        )),
-                        combine::skip_many(combine::parser::char::char(' ')),
-                        combine::parser::choice::choice((
-                            parse_comment(),
-                            combine::parser::char::char('\n').map(|_| ()),
-                        )),
-                    ).map(|(parsed, _, _)| parsed),
+                    // Make leading whitespace optional by using skip_many instead of skip_many1
+                    combine::parser::choice::choice((
+                        combine::attempt(parse_label()),
+                        combine::attempt(parse_command()),
+                    )),
                     // Blank line or pure comment line
                     parse_blank_or_comment_line().map(|_| {
                         Parsed {

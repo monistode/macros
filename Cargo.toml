@@ -1,6 +1,6 @@
 [package]
 name = "monistode-macros"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "A set of assembler-generating macros for monistode"
 license = "MIT"
