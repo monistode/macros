@@ -107,8 +107,7 @@ fn generate_command_parser(
         match argument {
             ArgumentDefinition::Padding { .. } => {}
             _ => {
-                meaningful_args_exist = true;
-                if i > 0 {
+                if meaningful_args_exist {
                     argument_parsers.push(quote! {
                         (
                             combine::parser::choice::choice((
@@ -121,6 +120,7 @@ fn generate_command_parser(
                     argument_names_with_commas
                         .push(syn::Ident::new("_", proc_macro2::Span::call_site()));
                 }
+                meaningful_args_exist = true;
             }
         }
         argument_parsers.push(generate_argument_parser(argument));
@@ -428,7 +428,12 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
             (
                 parse_symbol_name(),
                 combine::parser::char::char(':'),
-            ).map(|(name, _): (String, char)| {
+                combine::skip_many(combine::parser::char::char(' ')),
+                combine::parser::choice::choice((
+                    parse_comment(),
+                    combine::parser::char::char('\n').map(|_| ()),
+                )),
+            ).map(|(name, _, _, _)| {
                 Symbol {
                     name,
                     address: Address(0),
@@ -459,19 +464,15 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
             combine::parser::repeat::many((
                 combine::skip_many(combine::parser::char::char(' ')),
                 combine::parser::choice::choice((
-                    // Make leading whitespace optional by using skip_many instead of skip_many1
-                    combine::parser::choice::choice((
-                        combine::attempt(parse_label()),
-                        combine::attempt(parse_command()),
-                    )),
-                    // Blank line or pure comment line
-                    parse_blank_or_comment_line().map(|_| {
+                    combine::attempt(parse_label()),
+                    combine::attempt(parse_command()),
+                    combine::attempt(parse_blank_or_comment_line().map(|_| {
                         Parsed {
                             data: bitvec::prelude::BitVec::new(),
                             symbols: Vec::new(),
                             relocations: Vec::new(),
                         }
-                    }),
+                    })),
                 ))
             ).map(|(_, parsed)| parsed))
         }
