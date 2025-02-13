@@ -179,22 +179,14 @@ fn generate_command_parser(
 }
 
 fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
-    let command_parsers = definition.commands.iter().map(|c| {
+    let mut command_parsers = definition.commands.iter().map(|c| {
         generate_command_parser(
             c,
             definition.opcode_length,
             definition.text_byte_length,
             definition.address_size,
         )
-    });
-    // Add a newline to the end of each of them
-    let mut command_parsers = command_parsers
-        .map(|c| {
-            quote! { (
-                #c,
-                combine::parser::char::char('\n').map(|_| ())
-            ).map(|(parsed, _)| parsed) }
-        })
+    })
         .collect::<Vec<_>>();
 
     while command_parsers.len() > 1 {
@@ -310,8 +302,16 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
             Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
         {
             (
-                combine::parser::char::letter(),
-                combine::parser::repeat::many(combine::parser::char::alpha_num()),
+                // Allow underscore or letter as first character
+                combine::parser::choice::choice((
+                    combine::parser::char::letter(),
+                    combine::parser::char::char('_'),
+                )),
+                // Allow underscores in the rest of the name
+                combine::parser::repeat::many(combine::parser::choice::choice((
+                    combine::parser::char::alpha_num(),
+                    combine::parser::char::char('_'),
+                ))),
             ).map(|(first, rest): (char, Vec<char>)| {
                 let mut name = String::new();
                 name.push(first);
@@ -345,6 +345,21 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
                 })
         }
 
+        fn parse_comment<Input>() -> impl combine::Parser<Input, Output = ()>
+        where
+            Input: combine::Stream<Token = char>,
+            Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+        {
+            (
+                combine::parser::choice::choice((
+                    combine::parser::char::char('#'),
+                    combine::parser::char::char(';'),
+                )),
+                combine::parser::repeat::skip_many(combine::satisfy(|c| c != '\n')),
+                combine::parser::char::char('\n'),
+            ).map(|_| ())
+        }
+
         fn parse_value<Input>(n_bits: u8) -> impl combine::Parser<Input, Output = Parsed>
         where
             Input: combine::Stream<Token = char>,
@@ -369,6 +384,16 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
                         }],
                     }
                 })),
+                combine::attempt((
+                    combine::parser::char::char('\''),
+                    combine::satisfy(|c| c != '\''),
+                    combine::parser::char::char('\''),
+                ).map(move |(_, c, _)| {
+                    let immediate = c as usize;
+                    let mut data = bitvec::prelude::BitVec::new();
+                    data.extend((0..n_bits).map(|i| (immediate >> i) & 1 == 1).rev());
+                    Parsed::from_data(data)
+                })),
             ))
         }
 
@@ -387,8 +412,8 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
         {
             (
                 parse_symbol_name(),
-                combine::parser::char::string(":\n"),
-            ).map(|(name, _): (String, &str)| {
+                combine::parser::char::char(':'),
+            ).map(|(name, _): (String, char)| {
                 Symbol {
                     name,
                     address: Address(0),
@@ -396,17 +421,52 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
             })
         }
 
+        fn parse_blank_or_comment_line<Input>() -> impl combine::Parser<Input, Output = ()>
+        where
+            Input: combine::Stream<Token = char>,
+            Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
+        {
+            (
+                combine::parser::choice::choice((
+                    // Just a blank line
+                    combine::parser::char::char('\n').map(|_| ()),
+                    // Comment line
+                    parse_comment().map(|_| ()),
+                )),
+            ).map(|_| ())
+        }
+
         fn parse_commands<Input>() -> impl combine::Parser<Input, Output = Vec<Parsed>>
         where
             Input: combine::Stream<Token = char>,
             Input::Error: combine::ParseError<Input::Token, Input::Range, Input::Position>,
         {
-            combine::parser::repeat::many(
+            combine::parser::repeat::many((
+                combine::skip_many(combine::parser::char::char(' ')),
                 combine::parser::choice::choice((
-                    combine::attempt(parse_label()),
-                    combine::attempt(parse_command()),
+                    // Meaningful line (with either comment or newline)
+                    (
+                        // Make leading whitespace optional by using skip_many instead of skip_many1
+                        combine::parser::choice::choice((
+                            combine::attempt(parse_label()),
+                            combine::attempt(parse_command()),
+                        )),
+                        combine::skip_many(combine::parser::char::char(' ')),
+                        combine::parser::choice::choice((
+                            parse_comment(),
+                            combine::parser::char::char('\n').map(|_| ()),
+                        )),
+                    ).map(|(parsed, _, _)| parsed),
+                    // Blank line or pure comment line
+                    parse_blank_or_comment_line().map(|_| {
+                        Parsed {
+                            data: bitvec::prelude::BitVec::new(),
+                            symbols: Vec::new(),
+                            relocations: Vec::new(),
+                        }
+                    }),
                 ))
-            )
+            ).map(|(_, parsed)| parsed))
         }
 
         fn parse_text<Input>() -> impl combine::Parser<Input, Output = Parsed>
