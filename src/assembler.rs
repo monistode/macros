@@ -34,7 +34,10 @@ fn generate_register_group_parser(register_group: &RegisterGroup) -> proc_macro2
 
         let mut data = Vec::new();
         data.extend((0..register_group.length).map(|j| (i >> j) & 1).rev());
-        let data = data.iter().map(|b| quote!(bv.push(#b)));
+        let data = data
+            .into_iter()
+            .map(|b| b == 1usize)
+            .map(|b| quote!(bv.push(#b)));
 
         arms.push(quote! {
             combine::parser::char::string(#register).map(|_| {
@@ -101,16 +104,11 @@ fn generate_command_parser(
     let mut argument_parsers = Vec::new();
     let mut argument_names_with_commas = Vec::new();
     for (i, argument) in definition.arguments.iter().enumerate() {
-        argument_parsers.push(generate_argument_parser(argument));
-        argument_names_with_commas.push(syn::Ident::new(
-            format!("arg{}", i).as_str(),
-            proc_macro2::Span::call_site(),
-        ));
         match argument {
             ArgumentDefinition::Padding { .. } => {}
             _ => {
                 meaningful_args_exist = true;
-                if i < definition.arguments.len() - 1 {
+                if i > 0 {
                     argument_parsers.push(quote! {
                         (
                             combine::parser::choice::choice((
@@ -125,6 +123,11 @@ fn generate_command_parser(
                 }
             }
         }
+        argument_parsers.push(generate_argument_parser(argument));
+        argument_names_with_commas.push(syn::Ident::new(
+            format!("arg{}", i).as_str(),
+            proc_macro2::Span::call_site(),
+        ));
     }
 
     let argument_extenders = definition.arguments.iter().enumerate().map(|(i, _)| {
@@ -151,29 +154,17 @@ fn generate_command_parser(
     let byte_size = byte_size as usize;
     let address_size = address_size as usize;
 
-    let map = if meaningful_args_exist {
-        quote! {{
-            let mut bv = bitvec::prelude::BitVec::new();
-            bv.extend(vec![#(#data),*]);
+    let map = quote! {{
+        let mut bv = bitvec::prelude::BitVec::new();
+        bv.extend(vec![#(#data),*]);
 
-            let mut parsed = Parsed::from_data(bv);
+        let mut parsed = Parsed::from_data(bv);
+        #(#argument_extenders);*;
 
-            #(#argument_extenders);*;
+        parsed.ground_relocations(#byte_size, #address_size);
 
-            parsed.ground_relocations(#byte_size, #address_size);
-
-            parsed
-        }}
-    } else {
-        quote! {{
-            let mut bv = bitvec::prelude::BitVec::new();
-
-            bv.extend(vec![#(#data),*]);
-            #(#argument_extenders);*;
-
-            Parsed::from_data(bv)
-        }}
-    };
+        parsed
+    }};
 
     return quote! {
         (
@@ -223,7 +214,7 @@ fn generate_text_parser(definition: &Definition) -> proc_macro2::TokenStream {
     let command_parser = command_parsers.pop().unwrap();
 
     return quote! {
-        use combine::{Parser, EasyParser};
+        use combine::Parser;
         pub use monistode_binutils::{Address, Symbol};
         pub use monistode_binutils::object_file::Relocation;
 
