@@ -40,11 +40,11 @@ fn generate_register_group_parser(register_group: &RegisterGroup) -> proc_macro2
             .map(|b| quote!(bv.push(#b)));
 
         arms.push(quote! {
-            combine::parser::char::string(#register).map(|_| {
+            combine::attempt(combine::parser::char::string_cmp(#register, |l, r| l.eq_ignore_ascii_case(&r)).map(|_| {
                 let mut bv = bitvec::prelude::BitVec::new();
                 #(#data);*;
                 Parsed::from_data(bv)
-            })
+            }))
         });
     }
 
