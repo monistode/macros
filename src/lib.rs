@@ -1,4 +1,5 @@
 mod assembler;
+mod text_section;
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
 
