@@ -76,6 +76,18 @@ fn generate_argument_parser(definition: &ArgumentDefinition) -> proc_macro2::Tok
         ArgumentDefinition::Register { group } => {
             return generate_register_group_parser(group);
         }
+        ArgumentDefinition::RegisterAddress { group } => {
+            let register_parser = generate_register_group_parser(group);
+            return quote! {
+                (
+                    combine::parser::char::char('['),
+                    combine::skip_many(combine::parser::char::space()),
+                    #register_parser,
+                    combine::skip_many(combine::parser::char::space()),
+                    combine::parser::char::char(']')
+                ).map(|(_, _, parsed, _, _)| parsed)
+            };
+        }
         ArgumentDefinition::Padding { bits } => {
             let bits = bits.clone() as usize;
             return quote! {
